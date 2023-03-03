@@ -1,0 +1,1 @@
+/usr/bin/c++   -O3 -mmmx -msse -mpclmul -msse4.2 -DINTEL_SSE4  -rdynamic CMakeFiles/Tester.dir/Tester.cc.o  -o ../Tester ec/libec.a -lisal util/libutil.a -lgf_complete 
