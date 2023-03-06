@@ -1,5 +1,17 @@
 #include "ECDAG.hh"
 
+void print_vector1(string message, vector<int> vec)
+{
+    cout << endl
+         << message;
+    cout << "[";
+    for (auto it : vec)
+    {
+        cout << " " << it;
+    }
+    cout << "]" << endl;
+}
+
 ECDAG::ECDAG()
 {
 }
@@ -76,6 +88,7 @@ void ECDAG::Join(int pidx, vector<int> cidx, vector<int> coefs)
     // 1. deal with parent
     ECNode *rNode;
     assert(_ecNodeMap.find(pidx) == _ecNodeMap.end()); // 这条断言限制了Join操作是从child向parent方向发展的
+
     // pidx does not exists, create new one and add to headers
     rNode = new ECNode(pidx);
     // parent node is set to root on creation
@@ -89,6 +102,84 @@ void ECDAG::Join(int pidx, vector<int> cidx, vector<int> coefs)
     //  rNode->addCoefs(pidx, coefs);
 
     // set parent node for each child node
+    for (auto cnode : targetChilds)
+    {
+        cnode->addParentNode(rNode);
+    }
+}
+
+void ECDAG::Join_1(int pidx, vector<int> cidx, vector<int> coefs)
+{
+    string msg = "ECDAG::Join(" + to_string(pidx) + ",";
+    for (int i = 0; i < cidx.size(); i++)
+        msg += " " + to_string(cidx[i]);
+    msg += ",";
+    for (int i = 0; i < coefs.size(); i++)
+        msg += " " + to_string(coefs[i]);
+    msg += ")";
+    if (ECDAG_DEBUG_ENABLE)
+        cout << msg << endl;
+
+    vector<ECNode *> targetChilds; // 对于该Join操作中的 childs
+
+    // flags
+    for (int i = 0; i < cidx.size(); i++)
+    { // child
+        int curId = cidx[i];
+        // 0.0 check whether child exists in our ecNodeMap
+        unordered_map<int, ECNode *>::const_iterator findNode = _ecNodeMap.find(curId);
+        ECNode *curNode;
+        if (findNode == _ecNodeMap.end()) // 如果该child结点为新加入的结点,需要对其进行构造,并在dag中进行记录
+        {
+            // child does not exists, we need to create a new one
+            curNode = new ECNode(curId);
+            // a new child is set to leaf on creation
+            curNode->setType("leaf");
+            // insert into ecNodeMap
+            _ecNodeMap.insert(make_pair(curId, curNode));
+            _ecLeaves.push_back(curId);
+        }
+        else
+        {
+            // child exists
+            curNode = _ecNodeMap[curId];
+            // NOTE: if this node is marked with root before, it should be marked as intermediate now
+            vector<int>::iterator findpos = find(_ecHeaders.begin(), _ecHeaders.end(), curId);
+            if (findpos != _ecHeaders.end())
+            {
+                // delete from headers
+                _ecHeaders.erase(findpos);
+                curNode->setType("intermediate");
+            }
+        }
+        // 0.1 add curNode into targetChilds
+        targetChilds.push_back(curNode);
+    }
+
+    // 1. deal with parent
+    auto find_iter = _ecNodeMap.find(pidx);
+    ECNode *rNode;
+    if(find_iter == _ecNodeMap.end()){ // parent_node 不存在
+        rNode = new ECNode(pidx);
+        rNode->setType("root");
+        _ecNodeMap.insert(make_pair(pidx, rNode));
+        _ecHeaders.push_back(pidx);
+    }
+    else{ 
+        rNode = find_iter->second;
+        assert(rNode->getType() == 0); // 如果已存在,那么该点应当只能作为leaf,而不能是intermediate或root,否则该点就有两次被join
+        vector<int>::iterator findpos = find(_ecLeaves.begin(), _ecLeaves.end(), rNode->getNodeId());
+        _ecLeaves.erase(findpos);
+        rNode->setType("intermediate");
+    }
+
+    // cout << "rNode" << rNode->getNodeId() << " " <<  rNode->getType() << endl;
+    // for(auto it : targetChilds){
+    //     cout << "child:"<< it->getNodeId() << " " << it->getType() << endl;
+    // } 
+
+    rNode->setChilds(targetChilds); 
+    rNode->setCoefs(coefs);
     for (auto cnode : targetChilds)
     {
         cnode->addParentNode(rNode);
@@ -258,13 +349,36 @@ vector<int> ECDAG::getECHeaders()
     return _ecHeaders;
 }
 
-void ECDAG::dump()
+// void ECDAG::dump()
+// {
+//     for (auto id : _ecHeaders)
+//     {
+//         _ecNodeMap[id]->dump(-1);
+//         cout << endl;
+//     }
+// }
+
+void ECDAG::dump(string message)
 {
-    for (auto id : _ecHeaders)
+    cout << endl << "[DUMP]"<< message << endl;
+
+    // headers
+    cout << " _ecHeaders: [";
+    for (auto it : _ecHeaders)
     {
-        _ecNodeMap[id]->dump(-1);
-        cout << endl;
+        cout << " " << it;
     }
+    cout << "]" << endl;
+
+    // leaves
+    cout << " _ecLeaves: [";
+    for (auto it : _ecLeaves)
+    {
+        cout << " " << it;
+    }
+    cout << "]" << endl;
+
+
 }
 
 /**
@@ -366,7 +480,7 @@ vector<ECDAG *>* ECDAG::split()
                 vector<ECNode *> childs_nodes = curr_node->getChildNodes();
                 vector<int> child_idxs = curr_node->getChildIndices();
                 vector<int> curr_coefs = curr_node->getCoefs();
-                // split_ecdag->Join(curr_idx, child_idxs, curr_coefs);
+                split_ecdag->Join_1(curr_idx, child_idxs, curr_coefs);
                 reverse_orders.push_back(make_pair(curr_idx, make_pair(child_idxs, curr_coefs)));
                 for (auto child : childs_nodes)
                 { // 将child纳入deque中
@@ -376,14 +490,71 @@ vector<ECDAG *>* ECDAG::split()
             // child节点 或 已经将childs纳入curr的节点 会被弹出
             curr_nodes.pop_back();
         }
-        // 逆序执行命令
-        while (!reverse_orders.empty())
-        {
-            pair<int, pair<vector<int>, vector<int>>> order = reverse_orders.back();
-            reverse_orders.pop_back();
-            split_ecdag->Join(order.first, order.second.first, order.second.second);
-        }
+
+        // // 逆序执行命令
+        // while (!reverse_orders.empty())
+        // {
+        //     pair<int, pair<vector<int>, vector<int>>> order = reverse_orders.back();
+        //     reverse_orders.pop_back();
+        //     split_ecdag->Join(order.first, order.second.first, order.second.second);
+        // }
+        split_ecdag->dump(to_string(header));
         split_ecdags->push_back(split_ecdag);
     }
     return split_ecdags;
+}
+
+ECNode* ECDAG::getNode(int id){
+    
+    auto findpos = _ecNodeMap.find(id);
+    if(findpos == _ecNodeMap.end()) return nullptr;
+    return findpos->second;
+}
+
+ECDAG * ECDAG::split_1(vector<int> repair_idxs)
+{
+    cout << "split headers: [";
+    for (auto it : repair_idxs)
+    {
+        cout << " " << it;
+    }
+    cout << "]" << endl;
+    ECDAG *split_ecdag = new ECDAG();
+    for (int header : repair_idxs)
+    {
+        vector<int>::iterator findpos = find(_ecHeaders.begin(), _ecHeaders.end(), header);
+        assert(findpos != _ecHeaders.end()); // 验证repair_idx的正确性
+        ECNode *header_node = _ecNodeMap[header];
+
+        // debug
+        cout << endl
+             << "[DEBUG] 当前header节点: " << header_node->getNodeId() << endl;
+
+        deque<ECNode *> curr_nodes = {header_node};
+        while (curr_nodes.size() != 0) // 层序遍历
+        {
+            ECNode *curr_node_before = curr_nodes.back();
+            int curr_idx = curr_node_before->getNodeId();
+            if (curr_node_before->getType() != 0) // 非child节点将其childs纳入curr_node 
+            { 
+
+                vector<ECNode *> childs_nodes = curr_node_before->getChildNodes();
+                vector<int> child_idxs = curr_node_before->getChildIndices();
+                for (auto child : childs_nodes)
+                { // 将child纳入deque中
+                    ECNode * child_in_split = split_ecdag->getNode(child->getNodeId()); // 检查该child是否已经加入过ecdag
+                    if(child_in_split == nullptr){
+                        curr_nodes.push_front(child); // 若已join,则不再加入
+                    } 
+                }
+                vector<int> curr_coefs = curr_node_before->getCoefs();
+                split_ecdag->Join_1(curr_idx, child_idxs, curr_coefs);
+            }
+            // child节点 或 已经将childs纳入curr的节点 会被弹出
+            curr_nodes.pop_back();
+        }
+    }
+
+    split_ecdag->dump("");
+    return split_ecdag;
 }

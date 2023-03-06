@@ -39,7 +39,7 @@ ECDAG* RSCONV::Encode() {
     return ecdag;
 }
 
-ECDAG* RSCONV::Decode(vector<int> from, vector<int> to) {
+ECDAG* RSCONV::Decode(vector<int> from, vector<int> to) { // vector -> slice_index
     ECDAG* ecdag = new ECDAG();
     generate_matrix(_encode_matrix, _n, _k, 8);
     vector<int> data;

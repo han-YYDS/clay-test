@@ -19,9 +19,9 @@ using namespace std;
 
 class ComputeTask {
   public:
-    vector<int> _srclist;
-    vector<int> _dstlist;
-    vector<vector<int>> _coefs;
+    vector<int> _srclist; // from
+    vector<int> _dstlist; // to
+    vector<vector<int>> _coefs; // 
 
     ComputeTask(vector<int> srclist, vector<int> dstlist, vector<vector<int>> coefs) {
       _srclist = srclist;
@@ -63,9 +63,13 @@ class ECDAG {
     ~ECDAG();
 
     void Join(int pidx, vector<int> cidx, vector<int> coefs); // 编码
+    void Join_1(int pidx, vector<int> cidx, vector<int> coefs);
     void Concact(vector<int> cidx);
+    ECNode*  getNode(int id);
+
 
     vector<ECDAG*>* split();
+    ECDAG* split_1(vector<int> repair_idx);
     ECDAG* flatten();
 
     void genECUnits();
@@ -74,6 +78,6 @@ class ECDAG {
     vector<int> getECHeaders();
 
     // for debug
-    void dump();
+    void dump(string);
 };
 #endif

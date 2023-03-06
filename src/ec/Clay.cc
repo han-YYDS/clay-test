@@ -349,7 +349,7 @@ vector<int> Clay::get_uncoupled_from_coupled(int x, int y, int z, int* z_vec, EC
         realdata.push_back(tmprealidx);
     }
 
-    cout << "333 耦合2 ::old: Join(" << idx2 << "; [" << data[0] << ", " << data[1] << "])" << endl;
+    // cout << "333 耦合2 ::old: Join(" << idx2 << "; [" << data[0] << ", " << data[1] << "])" << endl;
     ecdag->Join(real_idx2, realdata, coef2);
     toret.push_back(real_idx2);
 
@@ -720,11 +720,11 @@ int Clay::get_repair_sub_chunk_count(vector<int> want_to_read) {
     return _sub_chunk_no - repair_subchunks_count;
 }
 
-ECDAG* Clay::Decode(vector<int> from, vector<int> to) {
+ECDAG* Clay::Decode(vector<int> from, vector<int> to) { // 这里的修复怎么好像还是针对于 blk? 
     cout << "Clay::Decode" << endl;
     ECDAG* ecdag = new ECDAG();
 
-    int lost = to[0] / _w;
+    int lost = to[0] / _w; // 只修复to[0]这个pkt 
 
     vector<int> want_to_read={lost};
     cout << "Decode: lost = " << lost << endl;
@@ -785,6 +785,7 @@ ECDAG* Clay::Decode(vector<int> from, vector<int> to) {
 
     assert(helper_data.size() + aloof_nodes.size() + recovered_data.size() == _q*_t);
 
+    // repair here 
     repair_one_lost_chunk(recovered_data, aloof_nodes,
             helper_data, repair_sub_chunks_ind, ecdag);
 
