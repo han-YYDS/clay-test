@@ -16,8 +16,7 @@ void usage()
     cout << "    3. w" << endl;
     cout << "    4. pkt KiB" << endl;
     cout << "    5. block MiB" << endl;
-    // cout << "    6. repair index" << endl;
-    // cout << "    6. repair sub_packet amount" << endl;
+    cout << "    6. repaired sub_pkt indexs" << endl;
 }
 
 double getCurrentTime()
@@ -42,7 +41,7 @@ void print_vector(string message, vector<int> vec)
 int main(int argc, char **argv)
 {
 
-    if (argc != 6)
+    if (argc < 6)
     {
         usage();
         return 0;
@@ -52,7 +51,7 @@ int main(int argc, char **argv)
     // pkt - packet size - 内存环境中,一次计算的大小
     // slice - 对packet进行细分之后的subpkt
 
-    // ex ./build/Tester 4 2 4 1 1
+    // ex ./build/Tester 4 2 4 1 1 0 1
     int n = atoi(argv[1]);      // 4
     int k = atoi(argv[2]);      // 2
     int w = atoi(argv[3]);      // 4 分包数量
@@ -64,24 +63,19 @@ int main(int argc, char **argv)
 
     // 0.0  get repairIdx
     // int subPacket_amount = atoi(argv[6]); // 所要修复的 sub_packet 数量
-    cout << "input subPacket indexs spaced with space " << endl;
-    vector<int> repair_subpacket_indexs;
-    int i;
-    while (cin >> i)
-    { // input repair_subpacket_indexs
-        repair_subpacket_indexs.push_back(i);
-        if ('\n' == cin.get())
-        {
-            break;
-        }
+
+    vector<int> repair_subPkt_idxs;
+    for (int i = 6; i < argc; ++i)
+    {
+        repair_subPkt_idxs.push_back(stoi(argv[i]));
     }
 
     unordered_set<int> repair_indexs;
-    for (auto it : repair_subpacket_indexs)
+    for (auto it : repair_subPkt_idxs)
     {
         repair_indexs.insert(it / w); // 将sub_packet所在的块加入到repair_index中
     }
-    assert(repair_indexs.size() == 1);
+    // assert(repair_indexs.size() == 1);
 
     int repairIdx = *repair_indexs.begin(); // 所要修复的chunk索引 未知
     cout << "repairIdx = " << repairIdx << endl;
@@ -103,7 +97,7 @@ int main(int argc, char **argv)
     }
 
     // 0.1 prepare buffers
-    char **buffers = (char **)calloc(n, sizeof(char *)); // n个packet的buffer
+    char **buffers = (char **)calloc(n, sizeof(char *)); // n*pkt 初始数据
     for (int i = 0; i < n; i++)
     {
         // 每个buffer对应 stripe中的一个packet
@@ -120,6 +114,7 @@ int main(int argc, char **argv)
             }
         }
     }
+
     char *repairbuffer = (char *)calloc(pktbytes, sizeof(char)); // 需要修复的pkt的buffer
 
     // 1. prepare for encode
@@ -129,26 +124,7 @@ int main(int argc, char **argv)
     // 1.1 create encode tasks
     encdag = ec->Encode(); // 封装encdag
     cout << ">>> encode is finished" << endl;
-
-    // // 1.1.1 split
-    // cout << endl
-    //      << ">>> split is begining" << endl;
-    // // vector<ECDAG *> *split_ecdags = encdag->split();
-    // ECDAG* split_ecdag = encdag->split_1({8,9});
-    // cout << ">>> split is finished" << endl;
-
-    // // 1.1.2 faltten
-    // cout << endl
-    //      << ">>> flatten is begining" << endl;
-    // vector<ECDAG *> flatten_ecdags;
-    // cout << split_ecdags->size() << endl;
-    // for (ECDAG *dag : *split_ecdags)
-    // {
-    //     ECDAG *flatten = dag->flatten();
-    //     flatten_ecdags.push_back(flatten);
-    // }
-    // cout << ">>> flatten is finished" << endl;
-    // encdag->genECUnits();
+    encdag->genECUnits();
 
     // 1.2 generate ComputeTask from ECUnits
     vector<ComputeTask *> encctasklist;
@@ -178,7 +154,7 @@ int main(int argc, char **argv)
 
     // 2. prepare for decode
     ECDAG *decdag = nullptr;
-    unordered_map<int, char *> decodeBufMap; //
+    unordered_map<int, char *> decodeBufMap; // sub_pkt index -> buff
 
     // 2.1 create decode tasks
     vector<int> availIdx;
@@ -191,8 +167,8 @@ int main(int argc, char **argv)
             if (i == repairIdx)
             {
                 toRepairIdx.push_back(idx);
-                char *buf = repairbuffer + j * slicebytes;
-                decodeBufMap.insert(make_pair(idx, buf));
+                char *buf = repairbuffer + j * slicebytes; // sub_pkt buffer
+                decodeBufMap.insert(make_pair(idx, buf));  //
             }
             else
             {
@@ -203,21 +179,19 @@ int main(int argc, char **argv)
         }
     }
     print_vector("availIdx =", availIdx);
-    print_vector("toRepairIdx = ", repair_subpacket_indexs);
+    print_vector("toRepairIdx = ", repair_subPkt_idxs);
 
     // decdag = dec->Decode(availIdx, toRepairIdx);
     decdag = dec->Decode(availIdx, toRepairIdx);
 
-    
-
-    // split 
+    // split
     cout << endl
          << ">>> split is begining" << endl;
-    ECDAG* split_decdag = decdag->split_1(repair_subpacket_indexs);
+    ECDAG *split_decdag = decdag->split_1(repair_subPkt_idxs);
     cout << ">>> split is finished" << endl;
 
     // decdag->Concact(toRepairIdx);
-    
+
     // 2.2 generate ComputeTask from ECUnits
     vector<ComputeTask *> decctasklist;
     // decdag->genECUnits();
@@ -225,8 +199,6 @@ int main(int argc, char **argv)
 
     split_decdag->genECUnits();
     split_decdag->genComputeTaskByECUnits(decctasklist);
-    
-    
 
     // 2.3 put shortened pkts into encodeBufMap
     vector<int> decHeaders = decdag->getECLeaves();
@@ -253,7 +225,9 @@ int main(int argc, char **argv)
             memset(buffers[i], 0, pktbytes);
         }
 
-        //// initialize databuffers with rand
+        
+
+        // // initialize databuffers with rand
         // for (int i=0; i<k; i++) {
         //     for (int j=0; j<pktbytes; j++) {
         //         buffers[i][j] = rand();
@@ -280,23 +254,25 @@ int main(int argc, char **argv)
             vector<vector<int>> coefs = cptask->_coefs;
 
             // cout << "srclist: ";
-            // for (int j=0; j<srclist.size(); j++)
-            //   cout << srclist[j] << " ";
+            // for (int j = 0; j < srclist.size(); j++)
+            //     cout << srclist[j] << " ";
             // cout << endl;
-            // for (int j=0; j<dstlist.size(); j++) {
-            //   int target = dstlist[j];
-            //   vector<int> coef = coefs[j];
-            //   cout << "target: " << target << "; coef: ";
-            //   for (int ci=0; ci<coef.size(); ci++) {
-            //     cout << coef[ci] << " ";
-            //   }
-            //   cout << endl;
+            // for (int j = 0; j < dstlist.size(); j++)
+            // {
+            //     int target = dstlist[j];
+            //     vector<int> coef = coefs[j];
+            //     cout << "target: " << target << "; coef: ";
+            //     for (int ci = 0; ci < coef.size(); ci++)
+            //     {
+            //         cout << coef[ci] << " ";
+            //     }
+            //     cout << endl;
             // }
 
             // now we create buf in bufMap
             for (auto dstidx : dstlist)
-            {
-                if (encodeBufMap.find(dstidx) == encodeBufMap.end())
+            {   
+                if (encodeBufMap.find(dstidx) == encodeBufMap.end()) // 对于virtual block分配 buffer
                 {
                     char *tmpbuf = (char *)calloc(slicebytes, sizeof(char));
                     memset(tmpbuf, 0, slicebytes);
@@ -304,27 +280,29 @@ int main(int argc, char **argv)
                 }
             }
 
-            int col = srclist.size(); // from_size
-            int row = dstlist.size(); // to_size
+            int col = srclist.size();                            // from_size
+            int row = dstlist.size();                            // to_size
             int *matrix = (int *)calloc(row * col, sizeof(int)); // encode_matrix
             char **data = (char **)calloc(col, sizeof(char *));  // data_buffer
             char **code = (char **)calloc(row, sizeof(char *));  // code_buffer
+
             // prepare data buf
             for (int bufIdx = 0; bufIdx < srclist.size(); bufIdx++) // 遍历data slices
             {
                 int child = srclist[bufIdx];
                 // check whether there is buf in databuf
                 assert(encodeBufMap.find(child) != encodeBufMap.end());
-                data[bufIdx] = encodeBufMap[child]; // 填装data_slices到data_buffer
+                data[bufIdx] = encodeBufMap[child]; 
                 unsigned char c = data[bufIdx][0];
             }
+
             // prepare code buf and matrix
             for (int codeBufIdx = 0; codeBufIdx < dstlist.size(); codeBufIdx++)
             {
                 int target = dstlist[codeBufIdx];
                 char *codebuf;
                 assert(encodeBufMap.find(target) != encodeBufMap.end());
-                code[codeBufIdx] = encodeBufMap[target]; // 填装code_slice到code_buffer (既然code是要求的,那么这里的填装意义何在?)
+                code[codeBufIdx] = encodeBufMap[target]; // 此时的codebuffer中都是0
                 vector<int> curcoef = coefs[codeBufIdx];
                 for (int j = 0; j < col; j++)
                 {
@@ -347,6 +325,7 @@ int main(int argc, char **argv)
             //   }
             //   cout << endl;
             // }
+
             free(matrix);
             free(data);
             free(code);
@@ -365,18 +344,43 @@ int main(int argc, char **argv)
         //     cout << endl;
         // }
 
-        // // debug decode
-        // cout << "before decoding:" << endl;
-        // for (int i=0; i<n; i++) {
+
+        // for (int i = 0; i < n; i++)
+        // {
         //     cout << "block[" << i << "]: ";
-        //     for (int j=0; j<w; j++) {
-        //         int idx = i*w+j;
-        //         char* buf = decodeBufMap[idx];
+        //     for (int j = 0; j < w; j++)
+        //     {
+        //         int idx = i * w + j;
+        //         char *buf = encodeBufMap[idx];
         //         char c = buf[0];
         //         cout << (int)c << " ";
+        //         for (int l = 1; l < slicebytes; l++)
+        //         {
+        //             if (buf[l] != buf[l - 1])
+        //             {
+        //                 cout << " error at offset " << l << " ";
+        //             }
+        //         }
+        //     }
+        //     cout << endl;
+        // }
+        
+        
+        // debug decode
 
-        //         for (int l=1; l<slicebytes; l++) {
-        //             if (buf[l] != buf[l-1]) {
+        // for (int i = 0; i < n; i++)
+        // {
+        //     cout << "block[" << i << "]: ";
+        //     for (int j = 0; j < w; j++)
+        //     {
+        //         int idx = i * w + j;
+        //         char *buf = encodeBufMap[idx];
+        //         char c = buf[0];
+        //         cout << (int)c << " ";
+        //         for (int l = 1; l < slicebytes; l++)
+        //         {
+        //             if (buf[l] != buf[l - 1])
+        //             {
         //                 cout << " error at offset " << l << " ";
         //             }
         //         }
@@ -456,17 +460,18 @@ int main(int argc, char **argv)
 
         // check correcness for decode
         bool success = true;
-        for (auto subpacket_index : repair_subpacket_indexs)
+
+        for (auto subpacket_index : repair_subPkt_idxs)
         {
-            int offset = subpacket_index % w; // packet内偏移
+            int w_offset = subpacket_index % w; // packet内偏移
             char *buffer = decodeBufMap[subpacket_index];
 
             for (int i = 0; i < slicebytes; i++)
             {
-                if (buffer[i] != repairbuffer[offset * sub_pkt_bytes + i])
+                if (buffers[subpacket_index/w][w_offset * slicebytes + i] != repairbuffer[w_offset * slicebytes + i])
                 {
                     success = false;
-                    cout << "repair error at offset: " << i << endl;
+                    cout << "repair error at index  " << subpacket_index << " offset: " << i << endl;
                     break;
                 }
             }
@@ -482,6 +487,7 @@ int main(int argc, char **argv)
     cout << "Encode Trpt: " << blkbytes * k / 1.048576 / encodeTime << endl;
     cout << "Decode Time: " << decodeTime / 1000 << " ms" << endl;
     cout << "Decode Trpt: " << blkbytes / 1.048576 / encodeTime << endl;
-
-    return 0;
+    int decodeTimeInt = (int) decodeTime / 1000;
+    cout << "decode time int =" << decodeTimeInt << endl;
+    return decodeTimeInt;
 }

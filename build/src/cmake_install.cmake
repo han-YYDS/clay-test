@@ -1,4 +1,4 @@
-# Install script for directory: /home/han/clay-test/src
+# Install script for directory: /home/han/Program/clay-test/src
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -37,10 +37,15 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
   set(CMAKE_CROSSCOMPILING "FALSE")
 endif()
 
+# Set default install directory permissions.
+if(NOT DEFINED CMAKE_OBJDUMP)
+  set(CMAKE_OBJDUMP "/usr/bin/objdump")
+endif()
+
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/han/clay-test/build/src/ec/cmake_install.cmake")
-  include("/home/han/clay-test/build/src/util/cmake_install.cmake")
+  include("/home/han/Program/clay-test/build/src/ec/cmake_install.cmake")
+  include("/home/han/Program/clay-test/build/src/util/cmake_install.cmake")
 
 endif()
 
